@@ -54,6 +54,7 @@ describe("Dockside settings contract", () => {
       "showProviderIcons",
       "showPullRequestMetadata",
       "showRelativeTime",
+      "recentCount",
     ]) {
       assert.match(server, new RegExp(`${key}:`));
     }

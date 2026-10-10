@@ -24,6 +24,7 @@ import {
   CHILD_EXPANSION_OPTIONS,
   CUSTOM_COLOR_DEFAULTS,
   PALETTE_PRESET_OPTIONS,
+  RECENT_COUNT_OPTIONS,
   ROW_DENSITY_OPTIONS,
   STATUS_DISPLAY_OPTIONS,
 } from "./lib/preferences.ts";
@@ -364,6 +365,14 @@ export default function plugin(bb: BbPluginApi) {
       type: "boolean",
       label: "Show relative time",
       default: true,
+    },
+    recentCount: {
+      type: "select",
+      label: "Recent threads shown",
+      description:
+        "How many recently updated threads the Recent section lists. 0 hides it.",
+      options: [...RECENT_COUNT_OPTIONS],
+      default: "10",
     },
   });
 

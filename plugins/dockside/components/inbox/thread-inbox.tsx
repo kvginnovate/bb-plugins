@@ -230,9 +230,10 @@ export function ThreadInbox({
     threads,
   ]);
 
-  // Cross-project jump list: the last ten root threads touched, newest first.
-  // Deliberately ignores the project/family order prefs — "recent" is about
-  // time, not placement.
+  // Cross-project jump list: the N most recently updated root threads, newest
+  // first. The count is a user setting ("0" hides the section). Deliberately
+  // ignores the project/family order prefs — "recent" is about time, not
+  // placement.
   const recentEntries = useMemo(
     () =>
       unfilteredProjectGroups
@@ -245,8 +246,8 @@ export function ThreadInbox({
         .sort(
           (left, right) => right.thread.updatedAt - left.thread.updatedAt,
         )
-        .slice(0, 10),
-    [unfilteredProjectGroups],
+        .slice(0, preferences.recentCount),
+    [unfilteredProjectGroups, preferences.recentCount],
   );
 
   useEffect(() => {

@@ -6,6 +6,8 @@ export const PALETTE_PRESET_OPTIONS = [
 ] as const;
 
 export const STATUS_DISPLAY_OPTIONS = ["Icons", "Verbose"] as const;
+export const RECENT_COUNT_OPTIONS = ["0", "5", "10", "15", "25", "50"] as const;
+
 export type StatusDisplay = (typeof STATUS_DISPLAY_OPTIONS)[number];
 
 export const ROW_DENSITY_OPTIONS = ["Comfortable", "Compact"] as const;
@@ -44,6 +46,7 @@ export interface DocksidePreferences {
   density: RowDensity;
   statusDisplay: StatusDisplay;
   defaultChildrenExpanded: boolean;
+  recentCount: number;
   showProviderIcons: boolean;
   showPullRequestMetadata: boolean;
   showRelativeTime: boolean;
@@ -187,6 +190,9 @@ export function resolveDocksidePreferences(
       true,
     ),
     showRelativeTime: readBoolean(values?.showRelativeTime, true),
+    recentCount: Number(
+      readOption(values?.recentCount, RECENT_COUNT_OPTIONS, "10"),
+    ),
   };
 }
 
