@@ -9,6 +9,7 @@ import {
 import {
   experimental_useProviders as useProviders,
   experimental_useSidebarThreads as useSidebarThreads,
+  experimental_useSidebarThreadActions as useSidebarThreadActions,
   useRpc,
   useSettings,
   type PluginSidebarThread,
@@ -21,6 +22,7 @@ import { ProjectGroup } from "@/components/inbox/project-group";
 import { StatusGroup } from "@/components/inbox/status-group";
 import type { ProviderGlyphInfo } from "@/components/inbox/provider-glyph";
 import { SlimRow } from "@/components/inbox/slim-row";
+import { RowContextMenu } from "@/components/inbox/row-context-menu";
 import { FilterMenu } from "@/components/inbox/filter-menu";
 import {
   BulkDeleteDialog,
@@ -33,12 +35,17 @@ import {
   mergeSettledThreads,
   pendingSettledCount,
 } from "@/lib/settled-threads";
-import { TRAILING_GLYPH_BOX_CLASS } from "@/components/inbox/status-slot";
+import {
+  STATUS_SLOT_CLASS,
+  StatusOrTime,
+  TRAILING_GLYPH_BOX_CLASS,
+} from "@/components/inbox/status-slot";
 import {
   groupThreadsByProject,
   searchProjectThreadGroups,
   searchThreadsByTitle,
   sortByCreatedAtDescending,
+  threadDisplayTitle,
   visibleInboxThreads,
 } from "@/lib/inbox";
 import {
@@ -119,6 +126,7 @@ export function ThreadInbox({
   const lifecycle = useLifecycle(threads);
   const [showSnoozed, setShowSnoozed] = useState(false);
   const [showSettled, setShowSettled] = useState(false);
+  const [showRecent, setShowRecent] = useState(true);
   const [filterPreset, setFilterPreset] =
     useState<ThreadFilterPreset>("all");
   const [selectionMode, setSelectionMode] = useState(false);
@@ -221,6 +229,25 @@ export function ThreadInbox({
     selectionMode,
     threads,
   ]);
+
+  // Cross-project jump list: the last ten root threads touched, newest first.
+  // Deliberately ignores the project/family order prefs — "recent" is about
+  // time, not placement.
+  const recentEntries = useMemo(
+    () =>
+      unfilteredProjectGroups
+        .flatMap((group) =>
+          group.families.map((family) => ({
+            thread: family.root,
+            projectName: group.project.name,
+          })),
+        )
+        .sort(
+          (left, right) => right.thread.updatedAt - left.thread.updatedAt,
+        )
+        .slice(0, 10),
+    [unfilteredProjectGroups],
+  );
 
   useEffect(() => {
     setSelectedRootIds((current) => {
@@ -746,6 +773,16 @@ export function ThreadInbox({
           </p>
         ) : (
           <>
+            {filterPreset === "all" && !selectionMode && !searching ? (
+              <RecentThreads
+                entries={recentEntries}
+                expanded={showRecent}
+                onToggle={() => setShowRecent((open) => !open)}
+                activeThreadId={activeThreadId}
+                onNavigate={onNavigate}
+                now={now}
+              />
+            ) : null}
             {filterPreset === "status"
               ? statusGroups.map((group) => (
                   <StatusGroup
@@ -829,6 +866,147 @@ export function ThreadInbox({
         onConfirm={() => void confirmSelectedDeletion()}
       />
     </div>
+  );
+}
+
+/**
+ * A cross-project "last ten touched" list. It repeats threads that also live
+ * under their project below — that duplication is the point: projects answer
+ * "where is this work", Recent answers "what did I touch last".
+ *
+ * Hidden during search, selection, and filtered presets: a second copy of a
+ * row in those views reads as a bug, not a shortcut.
+ */
+function RecentThreads({
+  entries,
+  expanded,
+  onToggle,
+  activeThreadId,
+  onNavigate,
+  now,
+}: {
+  entries: ReadonlyArray<{
+    thread: PluginSidebarThread;
+    projectName: string;
+  }>;
+  expanded: boolean;
+  onToggle: () => void;
+  activeThreadId: string | null;
+  onNavigate: () => void;
+  now: number;
+}) {
+  if (entries.length === 0) return null;
+  return (
+    <section aria-label="Recent">
+      <button
+        type="button"
+        onClick={onToggle}
+        aria-expanded={expanded}
+        className="flex w-full cursor-pointer items-center gap-2 px-2.5 pb-1 pt-0.5 text-left"
+      >
+        <span className="text-2xs font-medium text-muted-foreground/70">
+          {expanded ? "Recent" : `Recent (${entries.length})`}
+        </span>
+        <span className="h-px flex-1 bg-sidebar-border" />
+        <span className={TRAILING_GLYPH_BOX_CLASS}>
+          <Icon
+            name="ChevronDown"
+            className={cn(
+              "size-3 text-muted-foreground/70 transition-transform",
+              expanded && "rotate-180",
+            )}
+          />
+        </span>
+      </button>
+      {expanded ? (
+        <ul className="flex flex-col gap-px">
+          {entries.map((entry) => (
+            <RecentRow
+              key={entry.thread.id}
+              thread={entry.thread}
+              projectName={entry.projectName}
+              isActive={entry.thread.id === activeThreadId}
+              now={now}
+              onNavigate={onNavigate}
+            />
+          ))}
+        </ul>
+      ) : null}
+    </section>
+  );
+}
+
+/**
+ * One recent-thread line, in the slim-row shape: full-bleed anchor, muted
+ * title, and the shared trailing slot so it lines up with the cards and
+ * shelves below. The project name stays small and bounded — it is context,
+ * not the label.
+ */
+function RecentRow({
+  thread,
+  projectName,
+  isActive,
+  now,
+  onNavigate,
+}: {
+  thread: PluginSidebarThread;
+  projectName: string;
+  isActive: boolean;
+  now: number;
+  onNavigate: () => void;
+}) {
+  const actions = useSidebarThreadActions();
+  const title = threadDisplayTitle(thread);
+
+  return (
+    <RowContextMenu thread={thread}>
+      <li className="list-none">
+        <div
+          className={cn(
+            "group/recent relative flex h-8 items-center gap-2 rounded-md px-2.5 text-xs",
+            isActive ? "bg-sidebar-accent" : "hover:bg-sidebar-accent/60",
+          )}
+        >
+          {/* oxlint-disable-next-line jsx-a11y/anchor-is-valid -- must stay an
+              anchor: the shortcut-target contract and modifier-click
+              split-open both depend on it. A button breaks each. */}
+          <a
+            data-sidebar-thread-shortcut-target=""
+            data-sidebar-thread-id={thread.id}
+            href="#"
+            aria-label={title}
+            onClick={(event) => {
+              event.preventDefault();
+              actions.open(thread.id, {
+                split: event.metaKey || event.ctrlKey,
+              });
+              onNavigate();
+            }}
+            className="absolute inset-0 cursor-pointer rounded-md"
+          />
+          <span className="pointer-events-none relative w-16 shrink-0 truncate text-2xs text-muted-foreground/60">
+            {projectName}
+          </span>
+          <span
+            className={cn(
+              "pointer-events-none relative min-w-0 flex-1 truncate",
+              isActive ? "text-foreground" : "text-muted-foreground/70",
+              "group-hover/recent:text-foreground",
+            )}
+          >
+            {title}
+          </span>
+          <span
+            className={cn(
+              STATUS_SLOT_CLASS,
+              "pointer-events-none relative tabular-nums text-2xs text-muted-foreground/60",
+            )}
+          >
+            <StatusOrTime thread={thread} now={now} />
+          </span>
+        </div>
+      </li>
+    </RowContextMenu>
   );
 }
 
